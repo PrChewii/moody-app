@@ -64,13 +64,14 @@ h1 {
 }
 
 #calendar div {
-    padding: 15px;
+    padding: 10px;
     border: 1px solid #ddd;
     background: #fff;
     text-align: center;
     cursor: pointer;
     border-radius: 4px;
     transition: background-color 0.3s;
+    aspect-ratio: 1 / 1; /* Mantener el tamaño cuadrado */
 }
 
 #calendar div.gray {
@@ -176,12 +177,13 @@ footer {
     }
 
     #calendar {
-        grid-template-columns: repeat(4, 1fr);
+        grid-template-columns: repeat(7, 1fr);
+        gap: 3px;
         padding: 5px;
     }
 
     #calendar div {
-        padding: 12px;
+        padding: 8px;
     }
 
     #form-container {
@@ -204,11 +206,11 @@ footer {
 
 @media (max-width: 480px) {
     #calendar {
-        grid-template-columns: repeat(2, 1fr);
+        grid-template-columns: repeat(7, 1fr);
     }
 
     #calendar div {
-        padding: 10px;
+        padding: 6px;
     }
 
     #day-names {
