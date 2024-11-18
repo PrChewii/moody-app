@@ -51,6 +51,7 @@ h1 {
     text-align: center;
     font-weight: bold;
     margin-bottom: 10px;
+    font-size: 1rem;
 }
 
 #calendar {
@@ -180,7 +181,7 @@ footer {
     }
 
     #calendar div {
-        padding: 10px;
+        padding: 12px;
     }
 
     #form-container {
@@ -194,15 +195,24 @@ footer {
     #save-button, #edit-button, #delete-button {
         padding: 10px;
     }
+
+    #day-names {
+        font-size: 0.9rem;
+        grid-template-columns: repeat(7, 1fr);
+    }
 }
 
 @media (max-width: 480px) {
     #calendar {
-        grid-template-columns: repeat(3, 1fr);
+        grid-template-columns: repeat(2, 1fr);
     }
 
     #calendar div {
-        padding: 8px;
+        padding: 10px;
+    }
+
+    #day-names {
+        font-size: 0.8rem;
     }
 
     #toolbar-container {
