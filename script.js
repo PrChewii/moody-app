@@ -11,8 +11,8 @@ const firebaseConfig = {
 
 // Inicializar Firebase (usando el objeto firebase ya cargado en el HTML)
 firebase.initializeApp(firebaseConfig);
-const auth = firebase.auth();
-const db = firebase.firestore();
+const auth = firebase.auth();  // Aquí se define `auth`
+const db = firebase.firestore();  // Aquí se define `db`
 
 // Referencias a elementos HTML
 const authContainer = document.getElementById('auth-container');
@@ -28,7 +28,57 @@ const userInfo = document.createElement('div');
 userInfo.id = 'user-info';
 mainApp.insertBefore(userInfo, mainApp.firstChild);
 
-// Animación para mostrar y ocultar la ventana de autenticación
+const calendar = document.getElementById('calendar');
+const formContainer = document.getElementById('form-container');
+const selectedDateDisplay = document.getElementById('selected-date');
+const saveButton = document.getElementById('save-button');
+const editButton = document.getElementById('edit-button');
+const deleteButton = document.getElementById('delete-button');
+const moodDropdown = document.getElementById('mood');
+const currentMonthDisplay = document.getElementById('current-month');
+const prevMonthButton = document.getElementById('prev-month');
+const nextMonthButton = document.getElementById('next-month');
+
+// Inicializando Quill
+const quill = new Quill('#editor', {
+  modules: {
+    toolbar: [
+      ['bold', 'italic', 'underline', 'strike'],
+      ['blockquote', 'code-block'],
+      [{ 'header': 1 }, { 'header': 2 }],
+      [{ 'list': 'ordered' }, { 'list': 'bullet' }],
+      [{ 'script': 'sub' }, { 'script': 'super' }],
+      [{ 'indent': '-1' }, { 'indent': '+1' }],
+      [{ 'direction': 'rtl' }],
+      [{ 'size': ['small', false, 'large', 'huge'] }],
+      [{ 'header': [1, 2, 3, 4, 5, 6, false] }],
+      [{ 'color': [] }, { 'background': [] }],
+      [{ 'font': [] }],
+      [{ 'align': [] }],
+      ['link', 'image'],
+      ['clean']
+    ]
+  },
+  placeholder: '¿Cómo estuvo tu día?',
+  theme: 'snow'
+});
+
+// Definición de la función toggleAuthState
+function toggleAuthState(isAuthenticated, email = '') {
+  if (isAuthenticated) {
+    slideUp(authContainer); // Ocultar el contenedor de autenticación
+    setTimeout(() => {
+      mainApp.classList.remove('hidden'); // Mostrar la aplicación principal
+      userInfo.textContent = `Conectado como: ${email}`; // Mostrar el correo del usuario
+    }, 500);
+  } else {
+    slideDown(authContainer); // Mostrar el contenedor de autenticación
+    mainApp.classList.add('hidden'); // Ocultar la aplicación principal
+    userInfo.textContent = ''; // Limpiar la información del usuario
+  }
+}
+
+// Funciones para animaciones (slide up y slide down)
 function slideUp(element) {
   element.style.transition = 'transform 0.5s ease-in-out';
   element.style.transform = 'translateY(-100%)';
@@ -43,6 +93,8 @@ function slideDown(element) {
   element.style.transform = 'translateY(0)';
 }
 
+// Ahora que todo está inicializado, puedes proceder a agregar los eventListeners
+
 // Iniciar Sesión
 loginButton.addEventListener('click', async () => {
   const email = document.getElementById('email').value;
@@ -51,10 +103,45 @@ loginButton.addEventListener('click', async () => {
   try {
     await auth.signInWithEmailAndPassword(email, password);
     console.log("Sesión iniciada");
+    console.log("UID del usuario:", auth.currentUser.uid);  // Imprimir el UID del usuario en la consola
     toggleAuthState(true, email);
+
+    await updateExistingDocuments();
   } catch (error) {
     console.error("Error al iniciar sesión: ", error.message);
     alert("Error al iniciar sesión: " + error.message);
+  }
+});
+
+async function verifyAndUpdateDocuments() {
+  try {
+    // Obtener todos los documentos de la colección "moodEntries"
+    const snapshot = await db.collection('moodEntries').get();
+    const user = auth.currentUser;
+
+    if (user) {
+      for (const doc of snapshot.docs) {
+        const data = doc.data();
+        
+        // Verificar si el campo userId existe y si coincide con el usuario actual
+        if (!data.userId || data.userId !== user.uid) {
+          // Actualizar el documento agregando o corrigiendo el userId
+          await db.collection('moodEntries').doc(doc.id).update({
+            userId: user.uid
+          });
+          console.log(`Documento ${doc.id} actualizado con userId.`);
+        }
+      }
+    }
+  } catch (error) {
+    console.error("Error al verificar y actualizar los documentos: ", error);
+  }
+}
+
+// Llama a esta función después de iniciar sesión para verificar y actualizar los documentos
+auth.onAuthStateChanged((user) => {
+  if (user) {
+    verifyAndUpdateDocuments();
   }
 });
 
@@ -85,44 +172,131 @@ logoutButton.addEventListener('click', async () => {
   }
 });
 
-// Cambiar el estado de autenticación
-function toggleAuthState(isAuthenticated, email = '') {
-  if (isAuthenticated) {
-    slideUp(authContainer);
-    setTimeout(() => {
-      mainApp.classList.remove('hidden');
-      logoutButton.classList.remove('hidden');
-      userInfo.textContent = `Conectado como: ${email}`;
-    }, 500);
-  } else {
-    slideDown(authContainer);
-    mainApp.classList.add('hidden');
-    logoutButton.classList.add('hidden');
-    userInfo.textContent = '';
-  }
-}
-
 // Verificar el estado de autenticación
 auth.onAuthStateChanged((user) => {
   if (user) {
     // Si el usuario está autenticado, mostrar la aplicación principal con su correo electrónico
     toggleAuthState(true, user.email);
+    
+    if (!calendarRendered) {  // Agregar bandera para prevenir renderizado duplicado
+      renderCalendar(currentDate);  // Renderizar el calendario una vez que el usuario se autentica
+      calendarRendered = true;
+    }
   } else {
     // Si no hay un usuario autenticado, mostrar la ventana de autenticación
     toggleAuthState(false);
   }
 });
 
-const calendar = document.getElementById('calendar');
-const formContainer = document.getElementById('form-container');
-const selectedDateDisplay = document.getElementById('selected-date');
-const saveButton = document.getElementById('save-button');
-const editButton = document.getElementById('edit-button');
-const deleteButton = document.getElementById('delete-button');
-const moodDropdown = document.getElementById('mood');
-const currentMonthDisplay = document.getElementById('current-month');
-const prevMonthButton = document.getElementById('prev-month');
-const nextMonthButton = document.getElementById('next-month');
+//UsedID
+
+saveButton.addEventListener('click', async () => {
+  const selectedDateElement = document.querySelector('.selected');
+  if (!selectedDateElement) {
+    alert('Por favor selecciona una fecha primero.');
+    return;
+  }
+
+  const selectedDate = selectedDateElement.dataset.date;
+  const mood = moodDropdown.value;
+  const note = quill.root.innerHTML;
+
+  const user = auth.currentUser;
+  if (!user) {
+    alert('No se ha autenticado ningún usuario.');
+    return;
+  }
+
+  // Crear los datos que vamos a guardar, incluyendo el userId del usuario autenticado
+  const moodData = {
+    date: selectedDate,
+    mood: mood,
+    note: note,
+    userId: user.uid, // Asegúrate de incluir el userId
+  };
+
+  try {
+    // Guardar los datos en la colección "moodEntries" con el ID de la fecha seleccionada
+    await db.collection('moodEntries').doc(selectedDate).set(moodData);
+
+    // Cambiar el color del día en el calendario
+    selectedDateElement.style.backgroundColor = moodColors[mood];
+    
+    alert('Datos guardados!');
+    setFormEditable(false); // Bloquear el formulario después de guardar
+  } catch (error) {
+    console.error("Error al guardar datos: ", error);
+    alert("Error al guardar datos: " + error.message);
+  }
+});
+
+// Event Listener para el botón "Editar"
+editButton.addEventListener('click', () => {
+  setFormEditable(true); // Habilitar el formulario para editar
+});
+
+// Event Listener para el botón "Eliminar"
+deleteButton.addEventListener('click', async () => {
+  const selectedDateElement = document.querySelector('.selected');
+  if (!selectedDateElement) {
+    alert('Por favor selecciona una fecha primero.');
+    return;
+  }
+
+  const selectedDate = selectedDateElement.dataset.date;
+  const user = auth.currentUser;
+  if (!user) {
+    alert('No se ha autenticado ningún usuario.');
+    return;
+  }
+
+  try {
+    const doc = await db.collection('moodEntries').doc(selectedDate).get();
+    if (doc.exists && doc.data().userId === user.uid) {
+      await db.collection('moodEntries').doc(selectedDate).delete();
+      selectedDateElement.style.backgroundColor = ''; // Restablecer el color del día en el calendario
+      moodDropdown.value = '';
+      quill.setContents('');
+      alert('Datos eliminados!');
+      setFormEditable(false);
+    } else {
+      alert('No tienes permiso para eliminar estos datos.');
+    }
+  } catch (error) {
+    console.error("Error al eliminar los datos: ", error);
+    alert("Error al eliminar los datos: " + error.message);
+  }
+});
+
+
+// Esta función actualiza documentos existentes para agregar el campo userId si no lo tienen
+async function updateExistingDocuments() {
+  try {
+    // Obtener todos los documentos de la colección "moodEntries"
+    const snapshot = await db.collection('moodEntries').get();
+    const user = auth.currentUser;
+
+    if (user) {
+      for (const doc of snapshot.docs) {
+        const data = doc.data();
+        if (!data.userId) {
+          // Actualizar el documento agregando el userId del usuario autenticado
+          await db.collection('moodEntries').doc(doc.id).update({
+            userId: user.uid // Agregar el campo userId al documento
+          });
+          console.log(`Documento ${doc.id} actualizado con userId.`);
+        }
+      }
+    }
+  } catch (error) {
+    console.error("Error al actualizar los documentos existentes: ", error);
+  }
+}
+
+
+
+
+// Otros eventListeners (guardar, editar, eliminar)
 
 const moodColors = {
   1: '#b9fbc0',
@@ -135,31 +309,8 @@ const moodColors = {
 let currentDate = new Date();
 let isEditable = false;
 
-// Inicializando Quill
-const quill = new Quill('#editor', {
-  modules: {
-    toolbar: [
-      ['bold', 'italic', 'underline', 'strike'],        // toggled buttons
-      ['blockquote', 'code-block'],
-      [{ 'header': 1 }, { 'header': 2 }],               // custom button values
-      [{ 'list': 'ordered' }, { 'list': 'bullet' }],
-      [{ 'script': 'sub' }, { 'script': 'super' }],      // superscript/subscript
-      [{ 'indent': '-1' }, { 'indent': '+1' }],          // outdent/indent
-      [{ 'direction': 'rtl' }],                         // text direction
-      [{ 'size': ['small', false, 'large', 'huge'] }],  // custom dropdown
-      [{ 'header': [1, 2, 3, 4, 5, 6, false] }],
-      [{ 'color': [] }, { 'background': [] }],          // dropdown with defaults from theme
-      [{ 'font': [] }],
-      [{ 'align': [] }],
-      ['link', 'image'],                                // link and image
-      ['clean']                                         // remove formatting button
-    ]
-  },
-  placeholder: '¿Cómo estuvo tu día?',
-  theme: 'snow'
-});
 
-function renderCalendar(date) {
+async function renderCalendar(date) {
   calendar.innerHTML = '';
   const year = date.getFullYear();
   const month = date.getMonth();
@@ -168,6 +319,24 @@ function renderCalendar(date) {
   const daysInPrevMonth = new Date(year, month, 0).getDate();
 
   currentMonthDisplay.textContent = date.toLocaleString('default', { month: 'long', year: 'numeric' });
+
+  // Obtener todos los estados de ánimo para el mes actual desde Firestore
+  const monthStart = new Date(year, month, 1);
+  const monthEnd = new Date(year, month + 1, 0);
+  let moodEntries = {};
+  
+  try {
+    const snapshot = await db.collection('moodEntries')
+      .where('date', '>=', monthStart.toISOString().split('T')[0])
+      .where('date', '<=', monthEnd.toISOString().split('T')[0])
+      .get();
+
+    snapshot.forEach(doc => {
+      moodEntries[doc.id] = doc.data();
+    });
+  } catch (error) {
+    console.error("Error al cargar los datos del calendario: ", error);
+  }
 
   for (let i = firstDayOfMonth - 1; i >= 0; i--) {
     const dayElement = document.createElement('div');
@@ -180,10 +349,9 @@ function renderCalendar(date) {
     const dayElement = document.createElement('div');
     dayElement.textContent = day;
     dayElement.dataset.date = `${year}-${month + 1}-${day}`;
-    const savedData = JSON.parse(localStorage.getItem(dayElement.dataset.date));
-
-    if (savedData && savedData.mood) {
-      dayElement.style.backgroundColor = moodColors[savedData.mood];
+    
+    if (moodEntries[dayElement.dataset.date]) {
+      dayElement.style.backgroundColor = moodColors[moodEntries[dayElement.dataset.date].mood];
     }
 
     dayElement.addEventListener('click', () => selectDate(dayElement));
@@ -191,23 +359,51 @@ function renderCalendar(date) {
   }
 }
 
-function selectDate(element) {
+async function selectDate(element) {
   const previouslySelected = document.querySelector('.selected');
   if (previouslySelected) previouslySelected.classList.remove('selected');
   element.classList.add('selected');
   formContainer.classList.remove('hidden');
   selectedDateDisplay.textContent = `Fecha: ${element.dataset.date}`;
 
-  const savedData = JSON.parse(localStorage.getItem(element.dataset.date));
-  if (savedData) {
-    moodDropdown.value = savedData.mood;
-    quill.setContents(quill.clipboard.convert(savedData.note || ''));  // Load saved note without placeholder overlap
-    setFormEditable(false); // Lock form if data is already saved
-  } else {
-    moodDropdown.value = '';
-    quill.setContents('');  // Clear the editor when no saved data exists
-    quill.root.dataset.placeholder = '¿Cómo estuvo tu día?';  // Set placeholder for new entry
-    setFormEditable(true); // Allow editing for new entry
+  const user = auth.currentUser;
+  if (!user) {
+    alert('No se ha autenticado ningún usuario.');
+    return;
+  }
+
+  try {
+    // Obtener los datos del documento correspondiente en Firestore
+    const doc = await db.collection('moodEntries').doc(element.dataset.date).get();
+    if (!doc.exists) {
+      console.log(`El documento para la fecha ${element.dataset.date} no existe.`);
+      // No hay datos para este día, permitir la entrada de nuevos datos
+      moodDropdown.value = '';
+      quill.setContents('');
+      quill.root.dataset.placeholder = '¿Cómo estuvo tu día?';
+      setFormEditable(true);
+      return;  // Termina la ejecución aquí si el documento no existe
+    }
+
+    const savedData = doc.data();
+
+    console.log("UID del usuario autenticado:", user.uid);
+    console.log("UID almacenado en Firestore:", savedData.userId);
+
+    // Verificar que el documento contenga el userId correcto antes de acceder
+    if (savedData.userId && savedData.userId.trim() === user.uid.trim()) {
+      console.log("Los UID coinciden.");
+      moodDropdown.value = savedData.mood;
+      quill.setContents(quill.clipboard.convert(savedData.note || ''));
+      setFormEditable(false);
+    } else {
+      console.log("Los UID NO coinciden.");
+      alert("No tienes permiso para acceder a estos datos.");
+      setFormEditable(true);
+    }
+  } catch (error) {
+    console.error("Error al cargar los datos: ", error);
+    alert("Error al cargar los datos: " + error.message);
   }
 }
 
@@ -216,44 +412,17 @@ function setFormEditable(editable) {
   moodDropdown.disabled = !editable;
   quill.enable(editable);
   saveButton.disabled = !editable;
-  editButton.disabled = editable;
-  deleteButton.disabled = !editable;
-}
-
-saveButton.addEventListener('click', () => {
-  const selectedDate = document.querySelector('.selected').dataset.date;
-  const mood = moodDropdown.value;
-  const note = quill.root.innerHTML;
-
-  const moodData = {
-    mood,
-    note,
-  };
-
-  localStorage.setItem(selectedDate, JSON.stringify(moodData));
-
-  const selectedDayElement = document.querySelector(`[data-date='${selectedDate}']`);
-  selectedDayElement.style.backgroundColor = moodColors[mood];
-
-  alert('Datos guardados!');
-  setFormEditable(false); // Lock the form after saving
-});
-
-editButton.addEventListener('click', () => {
-  setFormEditable(true); // Unlock the form for editing
-});
-
-deleteButton.addEventListener('click', () => {
-  const selectedDate = document.querySelector('.selected').dataset.date;
-  if (confirm('¿Estás seguro de que deseas eliminar todos los datos de este día?')) {
-    localStorage.removeItem(selectedDate);
-    quill.setContents('');  // Clear editor content
-    moodDropdown.value = '';
-    const selectedDayElement = document.querySelector(`[data-date='${selectedDate}']`);
-    selectedDayElement.style.backgroundColor = '';
-    setFormEditable(true); // Allow new data to be added
+  
+  if (editable) {
+    editButton.classList.add('hidden');
+    saveButton.classList.remove('hidden');
+    deleteButton.disabled = false; // Habilitar el botón "Eliminar" cuando se está editando
+  } else {
+    editButton.classList.remove('hidden');
+    saveButton.classList.add('hidden');
+    deleteButton.disabled = true; // Deshabilitar el botón "Eliminar" cuando el formulario no está editable
   }
-});
+}
 
 prevMonthButton.addEventListener('click', () => {
   currentDate.setMonth(currentDate.getMonth() - 1);
