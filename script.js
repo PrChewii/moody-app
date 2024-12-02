@@ -177,16 +177,15 @@ auth.onAuthStateChanged((user) => {
   if (user) {
     // Si el usuario está autenticado, mostrar la aplicación principal con su correo electrónico
     toggleAuthState(true, user.email);
-    
-    if (!calendarRendered) {  // Agregar bandera para prevenir renderizado duplicado
-      renderCalendar(currentDate);  // Renderizar el calendario una vez que el usuario se autentica
-      calendarRendered = true;
-    }
+
+    // Renderizar el calendario cuando se detecta un usuario autenticado
+    renderCalendar(currentDate);  
   } else {
     // Si no hay un usuario autenticado, mostrar la ventana de autenticación
     toggleAuthState(false);
   }
 });
+
 
 //UsedID
 
@@ -197,7 +196,7 @@ saveButton.addEventListener('click', async () => {
     return;
   }
 
-  const selectedDate = selectedDateElement.dataset.date;
+  const selectedDate = selectedDateElement.dataset.date; // El formato ahora será siempre YYYY-MM-DD
   const mood = moodDropdown.value;
   const note = quill.root.innerHTML;
 
@@ -207,23 +206,22 @@ saveButton.addEventListener('click', async () => {
     return;
   }
 
-  // Crear los datos que vamos a guardar, incluyendo el userId del usuario autenticado
+  // Crear los datos que vamos a guardar
   const moodData = {
     date: selectedDate,
     mood: mood,
     note: note,
-    userId: user.uid, // Asegúrate de incluir el userId
+    userId: user.uid,
   };
 
   try {
-    // Guardar los datos en la colección "moodEntries" con el ID de la fecha seleccionada
-    await db.collection('moodEntries').doc(selectedDate).set(moodData);
+    // Guardar los datos en una subcolección del usuario autenticado
+    await db.collection('moodEntries').doc(user.uid)
+      .collection('userEntries').doc(selectedDate).set(moodData);
 
-    // Cambiar el color del día en el calendario
     selectedDateElement.style.backgroundColor = moodColors[mood];
-    
     alert('Datos guardados!');
-    setFormEditable(false); // Bloquear el formulario después de guardar
+    setFormEditable(false);
   } catch (error) {
     console.error("Error al guardar datos: ", error);
     alert("Error al guardar datos: " + error.message);
@@ -251,9 +249,13 @@ deleteButton.addEventListener('click', async () => {
   }
 
   try {
-    const doc = await db.collection('moodEntries').doc(selectedDate).get();
+    // Verificar si el documento existe antes de intentar eliminarlo
+    const docRef = db.collection('moodEntries').doc(user.uid)
+      .collection('userEntries').doc(selectedDate);
+    
+    const doc = await docRef.get();
     if (doc.exists && doc.data().userId === user.uid) {
-      await db.collection('moodEntries').doc(selectedDate).delete();
+      await docRef.delete();
       selectedDateElement.style.backgroundColor = ''; // Restablecer el color del día en el calendario
       moodDropdown.value = '';
       quill.setContents('');
@@ -267,6 +269,7 @@ deleteButton.addEventListener('click', async () => {
     alert("Error al eliminar los datos: " + error.message);
   }
 });
+
 
 
 // Esta función actualiza documentos existentes para agregar el campo userId si no lo tienen
@@ -321,12 +324,19 @@ async function renderCalendar(date) {
   currentMonthDisplay.textContent = date.toLocaleString('default', { month: 'long', year: 'numeric' });
 
   // Obtener todos los estados de ánimo para el mes actual desde Firestore
+  const user = auth.currentUser;
+  if (!user) {
+    console.error("No se ha autenticado ningún usuario.");
+    return;
+  }
+
   const monthStart = new Date(year, month, 1);
   const monthEnd = new Date(year, month + 1, 0);
   let moodEntries = {};
   
   try {
-    const snapshot = await db.collection('moodEntries')
+    const snapshot = await db.collection('moodEntries').doc(user.uid)
+      .collection('userEntries')
       .where('date', '>=', monthStart.toISOString().split('T')[0])
       .where('date', '<=', monthEnd.toISOString().split('T')[0])
       .get();
@@ -348,8 +358,8 @@ async function renderCalendar(date) {
   for (let day = 1; day <= daysInMonth; day++) {
     const dayElement = document.createElement('div');
     dayElement.textContent = day;
-    dayElement.dataset.date = `${year}-${month + 1}-${day}`;
-    
+    dayElement.dataset.date = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`; // Asegurarse de usar el formato YYYY-MM-DD
+
     if (moodEntries[dayElement.dataset.date]) {
       dayElement.style.backgroundColor = moodColors[moodEntries[dayElement.dataset.date].mood];
     }
@@ -358,6 +368,7 @@ async function renderCalendar(date) {
     calendar.appendChild(dayElement);
   }
 }
+
 
 async function selectDate(element) {
   const previouslySelected = document.querySelector('.selected');
@@ -374,7 +385,9 @@ async function selectDate(element) {
 
   try {
     // Obtener los datos del documento correspondiente en Firestore
-    const doc = await db.collection('moodEntries').doc(element.dataset.date).get();
+    const doc = await db.collection('moodEntries').doc(user.uid)
+      .collection('userEntries').doc(element.dataset.date).get();
+    
     if (!doc.exists) {
       console.log(`El documento para la fecha ${element.dataset.date} no existe.`);
       // No hay datos para este día, permitir la entrada de nuevos datos
@@ -382,7 +395,7 @@ async function selectDate(element) {
       quill.setContents('');
       quill.root.dataset.placeholder = '¿Cómo estuvo tu día?';
       setFormEditable(true);
-      return;  // Termina la ejecución aquí si el documento no existe
+      return;
     }
 
     const savedData = doc.data();
@@ -390,8 +403,7 @@ async function selectDate(element) {
     console.log("UID del usuario autenticado:", user.uid);
     console.log("UID almacenado en Firestore:", savedData.userId);
 
-    // Verificar que el documento contenga el userId correcto antes de acceder
-    if (savedData.userId && savedData.userId.trim() === user.uid.trim()) {
+    if (savedData.userId === user.uid) {
       console.log("Los UID coinciden.");
       moodDropdown.value = savedData.mood;
       quill.setContents(quill.clipboard.convert(savedData.note || ''));
@@ -434,4 +446,6 @@ nextMonthButton.addEventListener('click', () => {
   renderCalendar(currentDate);
 });
 
-renderCalendar(currentDate);
+if (!auth.currentUser) {
+  renderCalendar(currentDate);
+}
